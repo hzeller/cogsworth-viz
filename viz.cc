@@ -92,7 +92,7 @@ int main(int argc, char *argv[]) {
                 // Here, we don't have the adjacent data; just fill next pixel
                 // as well.
                 raw_image[ypos * w + xpos] = avg;
-                raw_image[ypos * w + xpos+1] = avg;
+                raw_image[ypos * w + xpos-1] = avg;
             } else if (x % 2 == 1 && ypos >= h) {
                 raw_image[ypos * w + xpos] = avg;
                 raw_image[ypos * w + xpos+1] = avg;
