@@ -26,7 +26,7 @@ static int usage(const char *prog) {
 }
 
 int main(int argc, char *argv[]) {
-    if (argc < 3) return usage(argv[0]);
+    if (argc != 4) return usage(argv[0]);
     const char *pattern = argv[1];
     const int w = atoi(argv[2]);
     const int h = atoi(argv[3]);
