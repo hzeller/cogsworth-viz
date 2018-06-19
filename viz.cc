@@ -16,6 +16,10 @@
 
 RGBFloatCol *const colormap = kPlasmaColors;  // see colormaps.h for choice
 
+// Y between even/odd is shifted apparently due to the mechanics.
+// Some empirical fudge-value
+int kDataShift = 20;
+
 static int usage(const char *prog) {
     fprintf(stderr, "Usage: %s <filename-pattern> <width> <height>\n", prog);
     fprintf(stderr, "Output is written to stdout\n");
@@ -35,10 +39,13 @@ int main(int argc, char *argv[]) {
     const int h = atoi(argv[3]);
     int out_fd = STDOUT_FILENO;
 
+    const int img_w = w;
+    const int img_h = h + kDataShift;
+
     // Let's first determine the range of values, before we flatten it
     // to a 256 image
     float min_value = 1e6, max_value = -1e6;
-    float raw_image[w * h] = {0};
+    float raw_image[img_w * img_h] = {0};
     int64_t total_data_read = 0;
 
     char filename[256];
@@ -74,10 +81,25 @@ int main(int argc, char *argv[]) {
             munmap(values, statbuf.st_size);
             close(fd);
 
-            int ypos = x % 2 == 0 ? y : h - y - 1;  // Scanning goes up/down
-            int xpos = w - x - 1;                   // scanning right2left
+            // Assign pixels with a little bit of fudging because of the
+            // kDataShift. In regions where we only have even or odd data
+            // available, we just fill in the adjacent pixel. That creates lower
+            // picture at the top and bottom, but better than nothing.
+            int ypos = x % 2 == 0 ? y : img_h - y - 1; // Scanning goes up/down
+            int xpos = img_w - x - 1;                  // scanning right2left
             float avg = sum / count;
-            raw_image[ypos * w + xpos] = avg;
+            if (x % 2 == 0 && y < kDataShift) {
+                // Here, we don't have the adjacent data; just fill next pixel
+                // as well.
+                raw_image[ypos * w + xpos] = avg;
+                raw_image[ypos * w + xpos+1] = avg;
+            } else if (x % 2 == 1 && ypos >= h) {
+                raw_image[ypos * w + xpos] = avg;
+                raw_image[ypos * w + xpos+1] = avg;
+            } else {
+                // Regular pixel
+                raw_image[ypos * w + xpos] = avg;
+            }
             // TODO: record a histogram, so that we can scale things in the
             // 2..98 percentile.
             if (avg < min_value) min_value = avg;
@@ -89,10 +111,10 @@ int main(int argc, char *argv[]) {
             min_value, max_value, total_data_read / 1024.0 / 1024.0);
 
     // Dump out the PNM image.
-    dprintf(out_fd, "P6\n%d %d\n255\n", w, h);
+    dprintf(out_fd, "P6\n%d %d\n255\n", img_w, img_h);
     const float scale = 255 / (max_value - min_value);
-    for (int y = 0; y < h; ++y) {
-        for (int x = 0; x < w; ++x) {
+    for (int y = 0; y < img_h; ++y) {
+        for (int x = 0; x < img_w; ++x) {
             float raw = raw_image[y * w + x];
             int val = (raw < min_value) ? 0 : round((raw - min_value) * scale);
             if (val < 0) val = 0;  // Put into range in case we used histogram
