@@ -14,7 +14,7 @@ Example:
 Here a concrete run with data provided by Paul:
 ```
 make
-./viz /tmp/3162099/SAMPLE_3162099_%d_%d.dmp 200 70 | pnmtopng > /tmp/foulab.png
+./viz /tmp/3162099/SAMPLE_3162099_%d_%d.dmp 207 80 | pnmtopng > /tmp/foulab.png
 timg /tmp/foulab.png
 ```
 

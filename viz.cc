@@ -18,7 +18,7 @@ RGBFloatCol *const colormap = kPlasmaColors;  // see colormaps.h for choice
 
 // Y between even/odd is shifted apparently due to the mechanics.
 // Some empirical fudge-value
-int kDataShift = 20;
+int kDataShift = 10;
 
 static int usage(const char *prog) {
     fprintf(stderr, "Usage: %s <filename-pattern> <width> <height>\n", prog);
@@ -92,10 +92,10 @@ int main(int argc, char *argv[]) {
                 // Here, we don't have the adjacent data; just fill next pixel
                 // as well.
                 raw_image[ypos * w + xpos] = avg;
-                raw_image[ypos * w + xpos-1] = avg;
+                raw_image[ypos * w + xpos+1] = avg;
             } else if (x % 2 == 1 && ypos >= h) {
                 raw_image[ypos * w + xpos] = avg;
-                raw_image[ypos * w + xpos+1] = avg;
+                raw_image[ypos * w + xpos-1] = avg;
             } else {
                 // Regular pixel
                 raw_image[ypos * w + xpos] = avg;
