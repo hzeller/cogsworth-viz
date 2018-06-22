@@ -3,6 +3,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <getopt.h>
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -14,18 +15,32 @@
 
 #include "colormaps.h"
 
-RGBFloatCol *const colormap = kPlasmaColors;  // see colormaps.h for choice
+static const RGBFloatCol *const color_maps[] = {
+    kPlasmaColors,
+    kMagmaColors,
+    kInfernoColors,
+    kViridisColors
+};
 
 // Y between even/odd is shifted apparently due to the mechanics.
 // Some empirical fudge-value
-int kDataShift = 10;
+int kDefaultDataShift = 10;
+
+static int exit_with_msg(const char *msg) {
+    fprintf(stderr, "%s%s\n\n", msg, errno != 0 ? strerror(errno) : "");
+    return 2;
+}
 
 static int usage(const char *prog) {
-    fprintf(stderr, "Usage: %s <filename-pattern> <width> <height>\n", prog);
-    fprintf(stderr, "Output is written to stdout\n");
-    fprintf(stderr, "Example:\n"
-            "%s SAMPLE_3162099_%%03d-%%03d.dmp 200 70 > foo.pnm\n",
+    fprintf(stderr, "Usage: %s [options] <filename-pattern> <width> <height>\n",
             prog);
+    fprintf(stderr, "\t -c <color>  : Color map. One of [0..3]\n");
+    fprintf(stderr, "\t -s <shift>  : Data shift going up/down; "
+            "fix 'comb-effect'. Default 10.\n");
+    fprintf(stderr, "\t -o <outfile>: Output filename for PNM image. "
+            "Default stdout\n");
+    fprintf(stderr, "Example:\n"
+            "%s -c3 -o foo.pnm SAMPLE_3162099_%%d_%%d.dmp 207 80\n", prog);
     return 1;
 }
 
@@ -33,19 +48,36 @@ static int usage(const char *prog) {
 static bool looks_reasonable(float v) { return v >= 0 && v <= 1000; }
 
 int main(int argc, char *argv[]) {
-    if (argc != 4) return usage(argv[0]);
-    const char *pattern = argv[1];
-    const int w = atoi(argv[2]);
-    const int h = atoi(argv[3]);
+    errno = 0;
+    int data_shift = kDefaultDataShift;
+    unsigned int color_map_index = 0;
     int out_fd = STDOUT_FILENO;
+    int opt;
+    while ((opt = getopt(argc, argv, "c:o:s:")) != -1) {
+        switch (opt) {
+        case 's': data_shift = atoi(optarg); break;
+        case 'c': color_map_index = atoi(optarg); break;
+        case 'o': out_fd = open(optarg, O_WRONLY|O_TRUNC|O_CREAT, 0644); break;
+        }
+    }
 
+    if (optind + 3 !=  argc) return usage(argv[0]);
+    const char *pattern = argv[optind];
+    const int w = atoi(argv[optind+1]);
+    const int h = atoi(argv[optind+2]);
+
+    if (out_fd < 0) return exit_with_msg("Cannot open output file.");
+    if (color_map_index > 3) return exit_with_msg("Invalid color map.");
+    if (data_shift < 0) return exit_with_msg("Only positive data shift.");
+
+    const RGBFloatCol *const colormap = color_maps[color_map_index];
     const int img_w = w;
-    const int img_h = h + kDataShift;
+    const int img_h = h + data_shift;
 
     // Let's first determine the range of values, before we flatten it
-    // to a 256 image
+    // to a 256 color image
     float min_value = 1e6, max_value = -1e6;
-    float raw_image[img_w * img_h] = {0};
+    float *raw_image = new float[img_w * img_h];
     int64_t total_data_read = 0;
 
     char filename[256];
@@ -64,7 +96,7 @@ int main(int argc, char *argv[]) {
                 continue;
             }
 
-            fprintf(stderr, "\b\b\b\b\b\b\b%03d %03d", x, y);
+            fprintf(stderr, "\b\b\b\b\b\b\b%03d %03d", x, y); // show progress
             float *values = (float*) mmap(NULL, statbuf.st_size, PROT_READ,
                                           MAP_SHARED, fd, 0);
             if (values == MAP_FAILED) {
@@ -81,27 +113,23 @@ int main(int argc, char *argv[]) {
             munmap(values, statbuf.st_size);
             close(fd);
 
-            // Assign pixels with a little bit of fudging because of the
-            // kDataShift. In regions where we only have even or odd data
-            // available, we just fill in the adjacent pixel. That creates lower
-            // picture at the top and bottom, but better than nothing.
+            // Assign pixels with little bit of fudging because of the
+            // data shift. In regions where we only have even or odd data
+            // available, we just fill in the adjacent pixel. That creates
+            // lower-res picture at the top and bottom, but better than nothing.
             int ypos = x % 2 == 0 ? y : img_h - y - 1; // Scanning goes up/down
             int xpos = img_w - x - 1;                  // scanning right2left
             float avg = sum / count;
-            if (x % 2 == 0 && y < kDataShift) {
-                // Here, we don't have the adjacent data; just fill next pixel
-                // as well.
-                raw_image[ypos * w + xpos] = avg;
-                raw_image[ypos * w + xpos+1] = avg;
+            if (x % 2 == 0 && y < data_shift) {
+                raw_image[ypos * w + xpos] = raw_image[ypos * w + xpos+1] = avg;
             } else if (x % 2 == 1 && ypos >= h) {
-                raw_image[ypos * w + xpos] = avg;
-                raw_image[ypos * w + xpos-1] = avg;
+                raw_image[ypos * w + xpos] = raw_image[ypos * w + xpos-1] = avg;
             } else {
-                // Regular pixel
-                raw_image[ypos * w + xpos] = avg;
+                raw_image[ypos * w + xpos] = avg;  // Regular pixel.
             }
-            // TODO: record a histogram, so that we can scale things in the
-            // 2..98 percentile.
+
+            // TODO: record a histogram, so that we can scale things
+            // e.g. in the 2..98 percentile.
             if (avg < min_value) min_value = avg;
             if (avg > max_value) max_value = avg;
         }
@@ -126,4 +154,6 @@ int main(int argc, char *argv[]) {
             write(out_fd, col_bits, 3);
         }
     }
+    close(out_fd);
+    delete [] raw_image;
 }
