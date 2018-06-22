@@ -41,6 +41,9 @@ runtime is somewhat quick; here was about 2.4 seconds on my laptop.
 Indoor scan (`SAMPLE_3162099_%d_%d.dmp 207 80`)
 <img src="./img/foulab.png" width="100%"/>
 
+Outdoor scan (`SAMPLE_1297209_%d_%d.dmp 277 80`)
+<img src="./img/outdoor.png" width="100%"/>
+
 ## Colormaps
 There are different [color-maps] available to choose from that try to
 associate the strength of the signal with an intuitive color mapping; choose
